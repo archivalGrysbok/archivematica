@@ -1,0 +1,52 @@
+---
+name: "Acceptance Test XML validation"
+on:
+  push:
+    branches:
+      - "dev/xml-metadata-poc-amauats"
+jobs:
+  test:
+    name: "Test ${{ matrix.tag }} on ${{ matrix.browser }}"
+    runs-on: "ubuntu-18.04"
+    strategy:
+      fail-fast: false
+      matrix:
+        tag:
+          - "metadata-xml"
+        browser:
+          - "Firefox"
+          - "Chrome"
+    steps:
+      - name: "Check out repository"
+        uses: "actions/checkout@v2"
+        with:
+          submodules: true
+      - name: "Add env variables to docker-compose.yml"
+        run: |
+          sed -i -e 's|ARCHIVEMATICA_MCPCLIENT_MCPCLIENT_PROMETHEUS_BIND_ADDRESS: "0.0.0.0"$|ARCHIVEMATICA_MCPCLIENT_MCPCLIENT_PROMETHEUS_BIND_ADDRESS: "0.0.0.0"\n      ARCHIVEMATICA_MCPCLIENT_MCPCLIENT_METADATA_XML_VALIDATION_ENABLED: "true"\n      METADATA_XML_VALIDATION_SETTINGS_FILE: "/src/hack/submodules/archivematica-sampledata/xml-validation/xml_validation.py"|g' docker-compose.yml
+        working-directory: ./hack
+      - name: "Create external volumes"
+        run: |
+          make -C hack/ create-volumes
+      - name: "Start MySQL"
+        run: |
+          docker-compose up -d mysql
+        working-directory: ./hack
+      - name: "Build images"
+        run: |
+          make -C hack/ build
+      - name: "Start services"
+        run: |
+          docker-compose up -d
+        env:
+          cluster.routing.allocation.disk.threshold_enabled: false
+        working-directory: ./hack
+      - name: "Bootstrap services"
+        run: |
+          make -C hack/ bootstrap
+      - name: "Restart services"
+        run: |
+          make -C hack/ restart-am-services
+      - name: "Run AMAUAT tag"
+        run: |
+          make -C hack/ test-at-behave TAGS="${{ matrix.tag }}" BROWSER=${{ matrix.browser }}
